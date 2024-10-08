@@ -10,7 +10,7 @@ Route::get('/users/{user}/edit', function (User $user) {
     return inertia('EditUser', [
         'roles' => Role::pluck('name', 'id'),
         'user' => $user,
-    ]);
+    ])->modal(url('/users'));
 })->name('users.edit');
 
 // Update a user

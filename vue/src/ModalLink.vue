@@ -2,6 +2,7 @@
 import { modalPropNames, useModalStack } from './modalStack'
 import { ref, provide, watch, onMounted, useAttrs, onBeforeUnmount } from 'vue'
 import { only, rejectNullValues } from './helpers'
+import { router } from '@inertiajs/vue3'
 
 const props = defineProps({
     href: {
@@ -31,6 +32,10 @@ const props = defineProps({
     queryStringArrayFormat: {
         type: String,
         default: 'brackets',
+    },
+    navigate: {
+        type: Boolean,
+        default: false,
     },
     // Passthrough to Modal.vue
     closeButton: {
@@ -142,6 +147,17 @@ function handle() {
     if (!props.href.startsWith('#')) {
         loading.value = true
         emit('start')
+
+        if (props.navigate) {
+            return router.visit(props.href, {
+                method: props.method,
+                data: props.data,
+                headers: props.headers,
+                onFinished: () => {
+                    loading.value = false
+                },
+            })
+        }
     }
 
     modalStack
@@ -155,7 +171,10 @@ function handle() {
             onAfterLeave,
             props.queryStringArrayFormat,
         )
-        .then((context) => (modalContext.value = context))
+        .then((context) => {
+            console.log(context)
+            modalContext.value = context
+        })
         .catch((error) => emit('error', error))
         .finally(() => (loading.value = false))
 }

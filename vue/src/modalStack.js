@@ -1,4 +1,4 @@
-import { computed, readonly, ref, markRaw } from 'vue'
+import { computed, readonly, ref, markRaw, nextTick } from 'vue'
 import { default as Axios } from 'axios'
 import { except, only } from './helpers'
 import { router, usePage } from '@inertiajs/vue3'
@@ -10,7 +10,7 @@ const localModals = ref({})
 class Modal {
     constructor(component, response, modalProps, onClose, afterLeave) {
         this.id = Modal.generateId()
-        this.open = true
+        this.open = false
         this.listeners = {}
 
         this.component = component
@@ -43,9 +43,28 @@ class Modal {
         return stack.value.length < 2 || stack.value[stack.value.length - 1].id === this.id
     }
 
+    show = () => {
+        const index = this.index.value
+
+        if (index > -1) {
+            if (stack.value[index].open) {
+                // Only open if the modal is closed
+                return
+            }
+
+            stack.value[index].open = true
+        }
+    }
+
     close = () => {
         const index = this.index.value
+
         if (index > -1) {
+            if (!stack.value[index].open) {
+                // Only close if the modal is open
+                return
+            }
+
             Object.keys(this.listeners).forEach((event) => {
                 this.off(event)
             })
@@ -56,8 +75,17 @@ class Modal {
     }
 
     afterLeave = () => {
-        stack.value = stack.value.filter((m) => m.id !== this.id)
-        this.afterLeaveCallback?.()
+        const index = this.index.value
+
+        if (index > -1) {
+            if (stack.value[index].open) {
+                // Only execute the callback if the modal is closed
+                return
+            }
+
+            stack.value = stack.value.filter((m) => m.id !== this.id)
+            this.afterLeaveCallback?.()
+        }
     }
 
     on = (event, callback) => {
@@ -137,6 +165,12 @@ function pushLocalModal(name, modalProps, onClose, afterLeave) {
     return modal
 }
 
+function pushFromResponseData(responseData, modalProps = {}, onClose = null, onAfterLeave = null) {
+    return router
+        .resolveComponent(responseData.component)
+        .then((component) => push(markRaw(component), responseData, modalProps, onClose, onAfterLeave))
+}
+
 function visit(href, method, payload = {}, headers = {}, modalProps = {}, onClose = null, onAfterLeave = null, queryStringArrayFormat = 'brackets') {
     return new Promise((resolve, reject) => {
         if (href.startsWith('#')) {
@@ -159,11 +193,7 @@ function visit(href, method, payload = {}, headers = {}, modalProps = {}, onClos
                 'X-InertiaUI-Modal': true,
             },
         })
-            .then((response) => {
-                router.resolveComponent(response.data.component).then((component) => {
-                    resolve(push(markRaw(component), response.data, modalProps, onClose, onAfterLeave))
-                })
-            })
+            .then((response) => resolve(pushFromResponseData(response.data, modalProps, onClose, onAfterLeave)))
             .catch((error) => {
                 reject(error)
             })
@@ -173,6 +203,9 @@ function visit(href, method, payload = {}, headers = {}, modalProps = {}, onClos
 function push(component, response, modalProps, onClose, afterLeave) {
     const newModal = new Modal(component, response, modalProps, onClose, afterLeave)
     stack.value.push(newModal)
+    nextTick(() => {
+        newModal.show()
+    })
     return newModal
 }
 
@@ -184,6 +217,7 @@ export function useModalStack() {
     return {
         stack: readonly(stack),
         push,
+        pushFromResponseData,
         reset: () => (stack.value = []),
         visit,
         registerLocalModal,
